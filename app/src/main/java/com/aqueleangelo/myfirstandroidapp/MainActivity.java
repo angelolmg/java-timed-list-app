@@ -1,5 +1,6 @@
 package com.aqueleangelo.myfirstandroidapp;
 
+import android.os.CountDownTimer;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -24,16 +25,20 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
     private RecyclerView mRecyclerView;
     private ListAdapter mAdapter;
     private RecyclerView.LayoutManager mLayoutManager;
-    private Menu mMenu;
+    private MenuItem mTimer;
 
     private Button buttonInsert;
     private Button buttonPlay;
     private Button buttonRemove;
 
     private ItemTouchHelper mItemTouchHelper;
+    private CountDownTimer mCountDownTimer;
 
     private boolean shouldAddNewItem = true;
+    private boolean timeRunning = false;
     private int lastItemClicked;
+    private long timeLeft;
+
 
     private static final int MAX_SECONDS = 300;
     private static final int MIN_SECONDS = 5;
@@ -49,10 +54,6 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
 
         mItemTouchHelper = new ItemTouchHelper(simpleCallback);
         mItemTouchHelper.attachToRecyclerView(mRecyclerView);
-
-
-        //ItemTouchHelper itemTouchHelper = new ItemTouchHelper(simpleCallback);
-        //itemTouchHelper.attachToRecyclerView(mRecyclerView);
     }
 
     // Create and show menu bar
@@ -60,10 +61,9 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
     public boolean onCreateOptionsMenu(Menu menu) {
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.main_menu, menu);
-        mMenu = menu;
+        mTimer = menu.findItem(R.id.time_clock);
 
         updateCurrentTime();
-
         return true;
     }
 
@@ -86,33 +86,26 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
     }
 
     // Update the menu timer
-    private void updateMenuTimer(int timeSeconds){
-        MenuItem timerItem = mMenu.findItem(R.id.time_clock);
-        int min_sec[] =  calculateTime(timeSeconds);
-        timerItem.setTitle(min_sec[0] + ":" + min_sec[1]);
-    }
+    private void updateMenuTimerText(long timeSeconds){
+        int minutes = (int) (timeSeconds / 1000) / 60;
+        int seconds = (int) (timeSeconds / 1000) % 60;
 
-    // Calculates the minutes & seconds from time in seconds for the timer
-    private int[] calculateTime(int time){
-        int[] ans = new int[2];
-        // Minutes
-        ans[0] = time/60;
-        // Seconds
-        ans[1] = time - ans[0]*60;
-        return ans;
+        String timeStamp = String.format("%02d:%02d", minutes, seconds);
+        mTimer.setTitle(timeStamp);
+
     }
 
     // Update the time from current time listed
     public void updateCurrentTime(){
         int sum = 0;
-        for(int i = 0; i < mItemList.size(); i++)
-            sum += mItemList.get(i).getTime();
-        updateMenuTimer(sum);
+        for (ListItemCard listItemCard : mItemList) sum += listItemCard.getTime();
+        timeLeft = sum * 1000;
+        updateMenuTimerText(timeLeft);
     }
 
     // Changes an item of the mItemList in 'position' with a new 'name' and 'time'
     public void changeItem(int position, String name, int time){
-        if(position >= 0 | position <= mItemList.size()) {
+        if(position >= 0 & position <= mItemList.size()) {
             mItemList.get(position).changeTopText(name);
             mItemList.get(position).changeTime(time);
             notifyAdapterAndUpdateTimer(position);
@@ -121,7 +114,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
 
     // Inserts a new item at 'position'
     public void insertItem(int position, String name, int time){
-        if(position >= 0 | position <= mItemList.size()){
+        if(position >= 0 & position <= mItemList.size()){
             mItemList.add(position, new ListItemCard(name, time, false));
             notifyAdapterAndUpdateTimer(position);
         }
@@ -129,7 +122,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
 
     // Removes item at 'position'
     public void removeItem(int position){
-        if(position >= 0 | position <= mItemList.size()) {
+        if(position >= 0 & position <= mItemList.size()) {
             mItemList.remove(position);
             notifyAdapterAndUpdateTimer(position);
         }
@@ -137,7 +130,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
 
     // Changes the state of selection of item in 'position' to 'isChecked'
     public void changeSelection(int position, boolean isChecked){
-        if(position >= 0 | position <= mItemList.size())
+        if(position >= 0 & position <= mItemList.size())
             mItemList.get(position).changeChecked(isChecked);
     }
 
@@ -169,9 +162,11 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         mAdapter.setOnItemClickListener(new ListAdapter.OnItemClickListener() {
             @Override
             public void OnItemClick(int position) {
-                shouldAddNewItem = false;
-                lastItemClicked = position;
-                openDialog();
+                if(!timeRunning){
+                    shouldAddNewItem = false;
+                    lastItemClicked = position;
+                    openDialog();
+                }
             }
 
             @Override
@@ -194,8 +189,10 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         buttonInsert.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                shouldAddNewItem = true;
-                openDialog();
+                if(!timeRunning){
+                    shouldAddNewItem = true;
+                    openDialog();
+                }
             }
         });
 
@@ -222,10 +219,45 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         buttonPlay.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Toast.makeText(MainActivity.this,"you pressed play", Toast.LENGTH_SHORT).show();
-
+                //Toast.makeText(MainActivity.this,"you pressed play", Toast.LENGTH_SHORT).show();
+                if(timeRunning){
+                    resetTimer();
+                } else{
+                    startTimer();
+                    Log.d("LOGME", "timeLeft = " + timeLeft);
+                }
             }
         });
+    }
+
+    private void startTimer(){
+        mCountDownTimer = new CountDownTimer(timeLeft, 1000) {
+            @Override
+            public void onTick(long l) {
+                timeLeft = l;
+                updateMenuTimerText(timeLeft);
+            }
+
+            @Override
+            public void onFinish() {
+                resetTimer();
+            }
+        }.start();
+
+        buttonPlay.setText("Stop");
+        buttonInsert.setEnabled(false);
+        buttonRemove.setEnabled(false);
+        timeRunning = true;
+    }
+
+    private void resetTimer(){
+        mCountDownTimer.cancel();
+        updateCurrentTime();
+
+        buttonPlay.setText("Play");
+        buttonInsert.setEnabled(true);
+        buttonRemove.setEnabled(true);
+        timeRunning = false;
     }
 
     public void openDialog(){
@@ -270,7 +302,8 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         @Override
         public void onSelectedChanged(@Nullable RecyclerView.ViewHolder viewHolder, int actionState) {
             super.onSelectedChanged(viewHolder, actionState);
-            if(actionState == ItemTouchHelper.ACTION_STATE_DRAG){
+            if(actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+                assert viewHolder != null;
                 viewHolder.itemView.setAlpha(0.5f);
             }
         }
