@@ -1,5 +1,7 @@
 package com.aqueleangelo.myfirstandroidapp;
 
+import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.os.CountDownTimer;
 import android.util.Log;
 import android.view.Menu;
@@ -16,7 +18,10 @@ import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 
+import java.lang.reflect.Type;
 import java.util.*;
 
 public class MainActivity extends AppCompatActivity implements EditDialog.EditDialogListener {
@@ -40,9 +45,10 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
     private int lastItemClicked;
     private long timeLeft;
 
-
     private static final int MAX_SECONDS = 300;
     private static final int MIN_SECONDS = 5;
+    public static final String SHARED_PREFS = "sharedPrefs";
+    public static final String TASK_LIST = "task_list";
 
     public static int acclimationTime = 5;
 
@@ -51,7 +57,8 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        createItemList();
+        //createItemList();
+        loadData();
         buildRecyclerView();
         setButtons();
 
@@ -95,19 +102,23 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
 
         String timeStamp = String.format("%02d:%02d", minutes, seconds);
         mTimer.setTitle(timeStamp);
-
     }
 
     // Update the time from current time listed
     public void updateCurrentTime(){
-        int sum = 0;
-        for (ListItemCard listItemCard : mItemList) sum += listItemCard.getTime();
-        timeLeft = sum * 2;
-        timeLeft += acclimationTime;
-        timeLeft -= mItemList.get(mItemList.size()-1).getTime();
-        timeLeft *= 1000;
+        if(mItemList.size() > 0) {
+            int sum = 0;
+            for (ListItemCard listItemCard : mItemList) sum += listItemCard.getTime();
+            timeLeft = sum * 2;
+            timeLeft += acclimationTime;
+            timeLeft -= mItemList.get(mItemList.size()-1).getTime();
+            timeLeft *= 1000;
+        } else {
+            timeLeft = 0;
+        }
 
         updateMenuTimerText(timeLeft);
+        saveData();
     }
 
     // Changes an item of the mItemList in 'position' with a new 'name' and 'time'
@@ -117,6 +128,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
             mItemList.get(position).changeTime(time);
             mAdapter.notifyItemChanged(position);
             updateCurrentTime();
+            saveData();
         }
     }
 
@@ -126,6 +138,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
             mItemList.add(position, new ListItemCard(name, time, false));
             mAdapter.notifyItemInserted(position);
             updateCurrentTime();
+            saveData();
         }
     }
 
@@ -135,13 +148,16 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
             mItemList.remove(position);
             mAdapter.notifyItemRemoved(position);
             updateCurrentTime();
+            saveData();
         }
     }
 
     // Changes the state of selection of item in 'position' to 'isChecked'
     public void changeSelection(int position, boolean isChecked){
-        if(position >= 0 & position <= mItemList.size())
+        if(position >= 0 & position <= mItemList.size()){
             mItemList.get(position).changeChecked(isChecked);
+            saveData();
+        }
     }
 
 
@@ -150,7 +166,6 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         mItemList.add(new ListItemCard("Flexão normal", 5, false));
         mItemList.add(new ListItemCard("Prancha normal", 10, false));
         mItemList.add(new ListItemCard("Agachamento normal", 15, false));
-
     }
 
     public void buildRecyclerView(){
@@ -238,19 +253,29 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         mListTimer = new ListTimer(getActivityTimes(), acclimationTime);
         Log.d("LOGME", String.valueOf(mListTimer.getTimerTimes()));
         Log.d("LOGME", String.valueOf(mListTimer.getActivityNumbs()));
-        final long totalTime = timeLeft;
 
         mCountDownTimer = new CountDownTimer(timeLeft, 1000) {
+
+            long totalTime = timeLeft;
+            int lastEventIndex = -1;
+
             @Override
             public void onTick(long l) {
                 timeLeft = l;
                 updateMenuTimerText(timeLeft);
-                //Log.d("LOGME", String.valueOf(timeLeft));
 
                 int timeToGive = (int) ((totalTime/1000) - (timeLeft/1000));
                 int eventIndex = mListTimer.checkForEvent(timeToGive);
-                if(eventIndex >= 0)
-                    Log.d("LOGME", "EVENT " + eventIndex);
+                if(eventIndex >= 0){
+                    if(eventIndex == lastEventIndex){
+                        mLayoutManager.getChildAt(eventIndex).setBackgroundColor(Color.YELLOW);
+                    } else{
+                        mLayoutManager.getChildAt(eventIndex).setBackgroundColor(Color.GREEN);
+                        if(lastEventIndex >= 0)
+                            mLayoutManager.getChildAt(lastEventIndex).setBackgroundColor(Color.LTGRAY);
+                        lastEventIndex = eventIndex;
+                    }
+                }
             }
 
             @Override
@@ -276,32 +301,40 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         mCountDownTimer.cancel();
         updateCurrentTime();
 
+        // Sets the bg color for all view holders to white
+        for(int i = 0; i < mItemList.size(); i++)
+            mLayoutManager.getChildAt(i).setBackgroundColor(Color.WHITE);
+
         buttonPlay.setText("Play");
         buttonInsert.setEnabled(true);
         buttonRemove.setEnabled(true);
         timeRunning = false;
     }
+
     public void openDialog(){
         EditDialog editDialog = new EditDialog();
         editDialog.show(getSupportFragmentManager(),"edit_dialog");
     }
 
+    // Check if name & time are not blank
+    // Then handle invalid number formats (like really big ones)
+    // Clamp the time and display, creating or changing an item
     @Override
     public void applyTexts(String activityName, String time) {
-
-
-
-        // Check if name & time are not blank
-        // Clamp the time and display, creating or changing an item
-
         if(activityName.length() > 0 & time.length() > 0){
-            int clampedTimeInt = clamp(Integer.parseInt(time));
+            int timeInt;
+            try {
+                timeInt = Integer.parseInt(time);
+            } catch (NumberFormatException e) {
+                timeInt = MAX_SECONDS;
+            }
+
+            int clampedTimeInt = clamp(timeInt);
             if(shouldAddNewItem){
                 insertItem(mItemList.size(), activityName, clampedTimeInt);
             }else{
                 changeItem(lastItemClicked, activityName, clampedTimeInt);
             }
-
         }
     }
 
@@ -339,8 +372,31 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         public void clearView(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
             super.clearView(recyclerView, viewHolder);
             viewHolder.itemView.setAlpha(1.0f);
+            updateCurrentTime();
         }
     };
+
+    public void saveData(){
+        SharedPreferences sharedPreferences = getSharedPreferences(SHARED_PREFS, MODE_PRIVATE);
+        SharedPreferences.Editor editor = sharedPreferences.edit();
+
+        Gson gson = new Gson();
+        String json= gson.toJson(mItemList);
+        editor.putString(TASK_LIST, json);
+        editor.apply();
+    }
+
+    public void loadData(){
+        SharedPreferences sharedPreferences = getSharedPreferences(SHARED_PREFS, MODE_PRIVATE);
+        Gson gson = new Gson();
+        String json = sharedPreferences.getString(TASK_LIST, null);
+        Type type = new TypeToken<ArrayList<ListItemCard>>(){}.getType();
+        mItemList = gson.fromJson(json, type);
+
+        if(mItemList == null){
+            mItemList = new ArrayList<>();
+        }
+    }
 
     public static int clamp(int val) {
         return Math.max(MIN_SECONDS, Math.min(MAX_SECONDS, val));
