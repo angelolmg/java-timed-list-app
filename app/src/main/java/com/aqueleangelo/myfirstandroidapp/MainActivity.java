@@ -50,7 +50,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
     public static final String SHARED_PREFS = "sharedPrefs";
     public static final String TASK_LIST = "task_list";
 
-    public static int acclimationTime = 5;
+    public static final int ACCLIMATION_TIME = 5;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -110,7 +110,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
             int sum = 0;
             for (ListItemCard listItemCard : mItemList) sum += listItemCard.getTime();
             timeLeft = sum * 2;
-            timeLeft += acclimationTime;
+            timeLeft += ACCLIMATION_TIME;
             timeLeft -= mItemList.get(mItemList.size()-1).getTime();
             timeLeft *= 1000;
         } else {
@@ -186,7 +186,8 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
 
                 shouldAddNewItem = false;
                 lastItemClicked = position;
-                openDialog();
+                ListItemCard currentItem = mItemList.get(position);
+                openDialog(currentItem.getTopText(), String.valueOf(currentItem.getTime()));
             }
 
             @Override
@@ -213,7 +214,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
                     return;
 
                 shouldAddNewItem = true;
-                openDialog();
+                openDialog("","");
             }
         });
 
@@ -250,12 +251,11 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
     }
 
     private void startTimer(){
-        mListTimer = new ListTimer(getActivityTimes(), acclimationTime);
+        mListTimer = new ListTimer(getActivityTimes(), ACCLIMATION_TIME);
         Log.d("LOGME", String.valueOf(mListTimer.getTimerTimes()));
         Log.d("LOGME", String.valueOf(mListTimer.getActivityNumbs()));
 
         mCountDownTimer = new CountDownTimer(timeLeft, 1000) {
-
             long totalTime = timeLeft;
             int lastEventIndex = -1;
 
@@ -311,8 +311,8 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         timeRunning = false;
     }
 
-    public void openDialog(){
-        EditDialog editDialog = new EditDialog();
+    public void openDialog(String currentName, String currentTime){
+        EditDialog editDialog = new EditDialog(currentName, currentTime);
         editDialog.show(getSupportFragmentManager(),"edit_dialog");
     }
 
