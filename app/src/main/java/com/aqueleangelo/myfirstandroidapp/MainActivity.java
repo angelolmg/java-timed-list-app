@@ -2,6 +2,10 @@ package com.aqueleangelo.myfirstandroidapp;
 
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.SoundPool;
+import android.os.Build;
 import android.os.CountDownTimer;
 import android.util.Log;
 import android.view.Menu;
@@ -32,6 +36,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
     private RecyclerView.LayoutManager mLayoutManager;
     private MenuItem mTimer;
     private ListTimer mListTimer;
+    private ListSound soundList;
 
     private Button buttonInsert;
     private Button buttonPlay;
@@ -47,10 +52,11 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
 
     private static final int MAX_SECONDS = 300;
     private static final int MIN_SECONDS = 5;
-    public static final String SHARED_PREFS = "sharedPrefs";
-    public static final String TASK_LIST = "task_list";
+    private static final String SHARED_PREFS = "sharedPrefs";
+    private static final String TASK_LIST = "task_list";
+    private static final int ACCLIMATION_TIME = 5;
+    private static final int TTS_DELAY = 2;
 
-    public static final int ACCLIMATION_TIME = 5;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,6 +67,9 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
         loadData();
         buildRecyclerView();
         setButtons();
+
+        soundList = new ListSound();
+        soundList.buildSounds(this);
 
         mItemTouchHelper = new ItemTouchHelper(simpleCallback);
         mItemTouchHelper.attachToRecyclerView(mRecyclerView);
@@ -251,10 +260,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
     }
 
     private void startTimer(){
-        mListTimer = new ListTimer(getActivityTimes(), ACCLIMATION_TIME);
-        Log.d("LOGME", String.valueOf(mListTimer.getTimerTimes()));
-        Log.d("LOGME", String.valueOf(mListTimer.getActivityNumbs()));
-
+        mListTimer = new ListTimer(getActivityTimes(), ACCLIMATION_TIME, TTS_DELAY);
         mCountDownTimer = new CountDownTimer(timeLeft, 1000) {
             long totalTime = timeLeft;
             int lastEventIndex = -1;
@@ -269,11 +275,18 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
                 if(eventIndex >= 0){
                     if(eventIndex == lastEventIndex){
                         mLayoutManager.getChildAt(eventIndex).setBackgroundColor(Color.YELLOW);
+                        soundList.playSound("done");
                     } else{
                         mLayoutManager.getChildAt(eventIndex).setBackgroundColor(Color.GREEN);
                         if(lastEventIndex >= 0)
                             mLayoutManager.getChildAt(lastEventIndex).setBackgroundColor(Color.LTGRAY);
                         lastEventIndex = eventIndex;
+                        soundList.playSound("start");
+                    }
+                } else {
+                    int ttsIndex = mListTimer.checkForTTS(timeToGive);
+                    if(ttsIndex >= 0){
+                        soundList.playSound(mItemList.get(ttsIndex).getTopText());
                     }
                 }
             }
@@ -281,6 +294,7 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
             @Override
             public void onFinish() {
                 resetTimer();
+                soundList.playSound("finish");
             }
         }.start();
 
@@ -401,8 +415,15 @@ public class MainActivity extends AppCompatActivity implements EditDialog.EditDi
     public static int clamp(int val) {
         return Math.max(MIN_SECONDS, Math.min(MAX_SECONDS, val));
     }
+
     public void showList(){
         for (ListItemCard l: mItemList)
             Log.d("LOGME", l.getTopText() + " " + l.getTime());
+    }
+
+    @Override
+    protected void onDestroy() {
+        soundList.clear();
+        super.onDestroy();
     }
 }
